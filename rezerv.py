@@ -24,10 +24,12 @@ def parse_cli_args(args=None):
     parser_trains.add_argument('-v', '--verbose',
                                action='count',
                                help='Show verbose output.')
-    parser_trains.add_argument('-f', dest='from_city', type=int,
+    parser_trains.add_argument('-f', dest='from_city', type=str,
                                help='Code city from')
-    parser_trains.add_argument('-t', dest='to_city', type=int,
+    parser_trains.add_argument('-t', dest='to_city', type=str,
                                help='Code city to')
+    parser_trains.add_argument('-n', dest='train_number', type=str,
+                               help='Train number')
     parser_trains.add_argument('date', type=str,
                                help='Travel date')
 
@@ -42,6 +44,29 @@ def parse_cli_args(args=None):
 
 
 def trains(args):
+    try:
+        int(args.from_city)
+        from_city = args.from_city
+    except ValueError:
+        possible_codes = _rezolve_code(args.from_city)
+        if possible_codes:
+            from_city = possible_codes[0]['nom']
+            print 'ГОРОД ОТПРАВЛЕНИЯ ', possible_codes[0]['f_name']
+        else:
+            print 'ГОРОД ОТПРАВЛЕНИЯ НЕ ОПРЕДЕЛЕН'
+            exit(1)
+
+    try:
+        int(args.to_city)
+        to_city = args.to_city
+    except ValueError:
+        possible_codes = _rezolve_code(args.to_city)
+        if possible_codes:
+            to_city = possible_codes[0]['nom']
+            print 'ГОРОД ПРИБЫТИЯ ', possible_codes[0]['f_name']
+        else:
+            print 'ГОРОД ПРИБЫТИЯ НЕ ОПРЕДЕЛЕН'
+            exit(1)
 
     url = 'http://www.pz.gov.ua/'
     headers = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) '
@@ -69,19 +94,31 @@ def trains(args):
                              'Ubuntu Chromium/41.0.2272.76 '
                              'Chrome/41.0.2272.76 Safari/537.36',
                'X-Requested-With': 'XMLHttpRequest'}
-    data = {'kstotpr': args.from_city,
-            'kstprib': args.to_city,
+    data = {'kstotpr': from_city,
+            'kstprib': to_city,
             'sdate': args.date}
     resp = requests.post(url, headers=headers, data=data)
-    for train in resp.json().get('trains', []):
+    if args.train_number:
+        trains = [train for train in resp.json().get('trains', [])
+                  if train['train']['0'] == args.train_number.decode('utf-8')]
+    else:
+        trains = resp.json().get('trains', [])
+    for train in trains:
         print ('%s ### %s//%s - %s//%s ### %s'
                '' % (train['train']['0'],
                      train['otpr'],train['from']['0'],
                      train['to']['0'], train['prib'],
                      train['vputi']))
+        if not args.verbose:
+            continue
+        if args.verbose == 1:
+            print ' '.join(('%s %s' % (VTYPE_LONG[vtype], train[vtype])
+                            for vtype in ('l', 'k', 'p', 'c', 'o')))
+            print
+            continue
         for vtype in ('l', 'k', 'p', 'c', 'o'):
             print '%s %s' % (VTYPE_LONG[vtype], train[vtype])
-            if args.verbose >= 1 and vtype in ('l', 'k', 'p'):
+            if args.verbose >= 2 and vtype in ('l', 'k', 'p'):
                 data = {'nomtrain': '"%s"' % train['train']['0'],
                         'typevag': VTYPE_SHORT[vtype],
                         'nametrain': '%s-%s' % (train['from']['0'],
@@ -112,7 +149,7 @@ def trains(args):
                     stat['lowers'] += len(lowers)
                     stat['pairs'] += len(pairs)
                     stat['coupes'] += len(coupes)
-                    if args.verbose >= 2:
+                    if args.verbose >= 3:
                         print 'ВАГОН: ', vagon['number']
                         if uppers:
                             print 'ВЕРХНИЕ: %s' % uppers
@@ -126,8 +163,7 @@ def trains(args):
                        '' % (stat['total'], stat['lowers'],
                              stat['pairs'], stat['coupes']))
 
-
-def stations(args):
+def _rezolve_code(query):
     url = 'http://www.pz.gov.ua/rezervGR/aj_stations.php'
     headers = {'Accept': 'application/json, text/javascript, */*',
                'X-Requested-With': 'XMLHttpRequest',
@@ -136,12 +172,16 @@ def stations(args):
                              'AppleWebKit/537.36 (KHTML, like Gecko) '
                              'Ubuntu Chromium/41.0.2272.76 '
                              'Chrome/41.0.2272.76 Safari/537.36'}
+    params = {'stan': query}
+    resp = requests.get(url, headers=headers, params=params)
+    return json.loads(resp.text.split('\n')[-1])
+
+
+def stations(args):
     for q in args.query:
-        params = {'stan': q.decode('utf-8')}
-        resp = requests.get(url, headers=headers, params=params)
-        for item in json.loads(resp.text.split('\n')[-1]):
+        for item in _rezolve_code(q):
             print '%s : %s' % (item['f_name'], item['nom'])
 
 if __name__ == '__main__':
-    args = parse_cli_args()
-    globals()[args.func](args)
+    args_ = parse_cli_args()
+    globals()[args_.func](args_)
