@@ -23,13 +23,13 @@ def parse_cli_args(args=None):
                                           help='Look for trains')
     parser_trains.add_argument('-v', '--verbose',
                                action='count',
-                               help='Show verbose output.')
+                               help='Verbose output level. Allowed levels = v,vv,vvv.')
     parser_trains.add_argument('-f', dest='from_city', type=str,
-                               help='Code city from')
+                               help='City from. Allowed code or name')
     parser_trains.add_argument('-t', dest='to_city', type=str,
-                               help='Code city to')
+                               help='City to. Allowed code or name')
     parser_trains.add_argument('-n', dest='train_number', type=str,
-                               help='Train number')
+                               help='Train number. Optional filter')
     parser_trains.add_argument('date', type=str,
                                help='Travel date')
 
