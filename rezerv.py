@@ -35,6 +35,7 @@ def parse_cli_args(args=None):
     parser_stations.set_defaults(func='stations')
     return parser.parse_args(args=args)
 
+
 def trains(args):
 
     url = 'http://www.pz.gov.ua/rezervGR/aj_g60.php'
@@ -45,19 +46,24 @@ def trains(args):
     data = {'kstotpr': args.from_city,
             'kstprib': args.to_city,
             'sdate': args.date}
-    resp = requests.post(url, headers=headers, data=data).json()['trains']
-    for train in resp:
+    resp = requests.post(url, headers=headers, data=data)
+    for train in resp.json().get('trains', []):
         print ('%s ### %s//%s - %s//%s ### %s'
                '' % (train['train']['0'],
                      train['otpr'],train['from']['0'],
                      train['to']['0'], train['prib'],
-                     train[u'vputi']))
+                     train['vputi']))
         if 'l' in train:
             print 'ЛЮКС %s' % train['l']
         if 'k' in train:
             print 'КУПЕ %s' % train['k']
         if 'p' in train:
             print 'ПЛАЦ %s' % train['p']
+        if 'c' in train:
+            print 'СИДЧ %s' % train['c']
+        if 'o' in train:
+            print 'ОБЩЙ %s' % train['o']
+
 
 def stations(args):
     url = 'http://www.pz.gov.ua/rezervGR/aj_stations.php'
