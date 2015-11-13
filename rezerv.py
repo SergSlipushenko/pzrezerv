@@ -141,7 +141,8 @@ def trains(args):
                              if p % 2 == 1
                              and p + 1 in places]
                     coupes = [(p, p + 1, p + 2, p + 3) for p in places
-                              if p % 4 == 1
+                              if p <= 33
+                              and p % 4 == 1
                               and p + 1 in places
                               and p + 2 in places
                               and p + 3 in places]
@@ -149,7 +150,7 @@ def trains(args):
                     stat['lowers'] += len(lowers)
                     stat['pairs'] += len(pairs)
                     stat['coupes'] += len(coupes)
-                    if args.verbose >= 3:
+                    if args.verbose >= 4:
                         print 'ВАГОН: ', vagon['number']
                         if uppers:
                             print 'ВЕРХНИЕ: %s' % uppers
@@ -159,6 +160,10 @@ def trains(args):
                             print 'ВЕРХ+НИЗ: %s' % pairs
                         if coupes:
                             print 'КУПЕ: %s' % coupes
+                    elif args.verbose >= 3:
+                        print 'ВАГОН: ', vagon['number']
+                        print 'МЕСТА: %s' % places
+
                 print ('ВСЕГО: %s НИЖНИЕ: %s ВЕРХ+НИЗ: %s КУПЕ: %s'
                        '' % (stat['total'], stat['lowers'],
                              stat['pairs'], stat['coupes']))
