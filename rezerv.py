@@ -51,14 +51,16 @@ def parse_cli_args(args=None):
                                           help='Look for trains')
     parser_trains.add_argument('-v', '--verbose',
                                action='count',
-                               help='Verbose output level. Allowed levels = v,vv,vvv.')
-    parser_trains.add_argument('-f', dest='from_city', type=str,
+                               help='Verbose output level. '
+                                    'Allowed levels = v,vv,vvv, vvvv')
+    parser_trains.add_argument('-f', '--from', dest='from_city', type=str,
                                help='City from. Allowed code or name')
-    parser_trains.add_argument('-t', dest='to_city', type=str,
+    parser_trains.add_argument('-t', '--to', dest='to_city', type=str,
                                help='City to. Allowed code or name')
-    parser_trains.add_argument('-d', dest='debug', action='store_true',
+    parser_trains.add_argument('-d', '--debug', action='store_true',
                                help='Debug')
-    parser_trains.add_argument('-n', dest='train_number', type=str,
+    parser_trains.add_argument('-n', '--train-number', dest='train_number',
+                               type=str,
                                help='Train number. Optional filter')
     parser_trains.add_argument('date', type=str,
                                help='Travel date xx-xx-xxxx')
@@ -156,7 +158,8 @@ def trains(args):
                         'timeotpr': train['otpr'],
                         'timeprib': train['prib']}
                 url = 'http://www.pz.gov.ua/rezervGR/aj_g81.php'
-                resp = post(url, headers=headers, data=data, debug=args.debug).json()
+                resp = post(url, headers=headers, data=data,
+                            debug=args.debug).json()
                 stat = {'total': 0,
                         'lowers': 0,
                         'pairs': 0,
