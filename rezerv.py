@@ -3,9 +3,37 @@
 import argparse
 import requests
 import json
+import pprint
 
 VTYPE_SHORT = {'l': '"Л"', 'k': '"К"', 'p': '"П"'}
 VTYPE_LONG = {'l': 'ЛЮКС', 'k': 'КУПЕ', 'p': 'ПЛАЦ', 'o': 'ОБЩЙ', 'c': 'СИДЧ'}
+
+
+class UTFPPrinter(pprint.PrettyPrinter):
+    def format(self, item, context, maxlevels, level):
+        if isinstance(item, unicode):
+            return item.encode('utf8'), True, False
+        return pprint.PrettyPrinter.format(self, item, context,
+                                           maxlevels, level)
+
+upprint = UTFPPrinter().pprint
+
+def post(*args, **kwargs):
+    debug = kwargs.pop('debug')
+    if debug:
+        print ''
+        print 'POST %s' % next(iter(args))
+        print 'Request params'
+        upprint(kwargs)
+    resp = requests.post(*args, **kwargs)
+    if debug:
+        print 'Response:'
+        try:
+            upprint(resp.json())
+        except ValueError as e:
+            print resp.text
+        print ''
+    return resp
 
 def parse_cli_args(args=None):
 
@@ -28,10 +56,12 @@ def parse_cli_args(args=None):
                                help='City from. Allowed code or name')
     parser_trains.add_argument('-t', dest='to_city', type=str,
                                help='City to. Allowed code or name')
+    parser_trains.add_argument('-d', dest='debug', action='store_true',
+                               help='Debug')
     parser_trains.add_argument('-n', dest='train_number', type=str,
                                help='Train number. Optional filter')
     parser_trains.add_argument('date', type=str,
-                               help='Travel date')
+                               help='Travel date xx-xx-xxxx')
 
     parser_trains.set_defaults(func='trains')
 
@@ -97,7 +127,7 @@ def trains(args):
     data = {'kstotpr': from_city,
             'kstprib': to_city,
             'sdate': args.date}
-    resp = requests.post(url, headers=headers, data=data)
+    resp = post(url, headers=headers, data=data, debug=args.debug)
     if args.train_number:
         trains = [train for train in resp.json().get('trains', [])
                   if train['train']['0'] == args.train_number.decode('utf-8')]
@@ -126,7 +156,7 @@ def trains(args):
                         'timeotpr': train['otpr'],
                         'timeprib': train['prib']}
                 url = 'http://www.pz.gov.ua/rezervGR/aj_g81.php'
-                resp = requests.post(url, headers=headers, data=data).json()
+                resp = post(url, headers=headers, data=data, debug=args.debug).json()
                 stat = {'total': 0,
                         'lowers': 0,
                         'pairs': 0,
