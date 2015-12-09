@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import argparse
+import collections
 import requests
 import json
 import pprint
@@ -62,20 +63,28 @@ def parse_cli_args(args=None):
     parser_trains.add_argument('-n', '--train-number', dest='train_number',
                                type=str,
                                help='Train number. Optional filter')
+    parser_trains.add_argument('-q', '--query',
+                               type=str,
+                               help='Query for tickers. '
+                                    'Format: '
+                                    '<number: int>'
+                                    '-<vagon type: l,k,p,c,o>'
+                                    '-<query type, lowers, uppers, '
+                                    'pairs, coupes>,...')
     parser_trains.add_argument('date', type=str,
                                help='Travel date xx-xx-xxxx')
 
-    parser_trains.set_defaults(func='trains')
+    parser_trains.set_defaults(func='get_trains')
 
     parser_stations = subparsers.add_parser('station', parents=[],
                                             help='Look for station codes')
     parser_stations.add_argument('query', type=str, nargs='+',
                                  help='Query for station name')
-    parser_stations.set_defaults(func='stations')
+    parser_stations.set_defaults(func='guess_station_codes')
     return parser.parse_args(args=args)
 
 
-def trains(args):
+def get_trains(args):
     try:
         int(args.from_city)
         from_city = args.from_city
@@ -130,27 +139,41 @@ def trains(args):
             'kstprib': to_city,
             'sdate': args.date}
     resp = post(url, headers=headers, data=data, debug=args.debug)
+    trains = resp.json().get('trains', [])
+    stat = collections.defaultdict(lambda: collections.defaultdict(int))
     if args.train_number:
-        trains = [train for train in resp.json().get('trains', [])
+        trains = [train for train in trains
                   if train['train']['0'] == args.train_number.decode('utf-8')]
-    else:
-        trains = resp.json().get('trains', [])
+
+    queries = []
+    if args.query:
+        for query in args.query.split(','):
+            number, vtype, qtype = query.split('.')
+            queries.extend([(vtype, qtype)]*int(number))
+
+    result = []
+
     for train in trains:
+        stat = collections.defaultdict(lambda: collections.defaultdict(int))
+        metric = collections.defaultdict(
+            lambda: collections.defaultdict(
+                lambda: collections.defaultdict(list)))
         print ('%s ### %s//%s - %s//%s ### %s'
                '' % (train['train']['0'],
                      train['otpr'],train['from']['0'],
                      train['to']['0'], train['prib'],
                      train['vputi']))
-        if not args.verbose:
+        if not args.verbose and not args.query:
             continue
-        if args.verbose == 1:
+        if args.verbose == 1 and not args.query:
             print ' '.join(('%s %s' % (VTYPE_LONG[vtype], train[vtype])
                             for vtype in ('l', 'k', 'p', 'c', 'o')))
             print
             continue
+
         for vtype in ('l', 'k', 'p', 'c', 'o'):
             print '%s %s' % (VTYPE_LONG[vtype], train[vtype])
-            if args.verbose >= 2 and vtype in ('l', 'k', 'p'):
+            if (args.verbose >= 2 or args.query) and vtype in ('l', 'k', 'p'):
                 data = {'nomtrain': '"%s"' % train['train']['0'],
                         'typevag': VTYPE_SHORT[vtype],
                         'nametrain': '%s-%s' % (train['from']['0'],
@@ -160,46 +183,80 @@ def trains(args):
                 url = 'http://www.pz.gov.ua/rezervGR/aj_g81.php'
                 resp = post(url, headers=headers, data=data,
                             debug=args.debug).json()
-                stat = {'total': 0,
-                        'lowers': 0,
-                        'pairs': 0,
-                        'coupes': 0}
                 for vagon in resp.get('vagons', []):
+                    n = vagon['number']
                     places = [int(p) for p in vagon['mesta']]
-                    if not places:
-                        continue
-                    uppers = [p for p in places if p % 2 == 0]
-                    lowers = [p for p in places if p % 2 == 1]
-                    pairs = [(p, p + 1) for p in places
-                             if p % 2 == 1
-                             and p + 1 in places]
-                    coupes = [(p, p + 1, p + 2, p + 3) for p in places
-                              if p <= 33
-                              and p % 4 == 1
-                              and p + 1 in places
-                              and p + 2 in places
-                              and p + 3 in places]
-                    stat['total'] += len(places)
-                    stat['lowers'] += len(lowers)
-                    stat['pairs'] += len(pairs)
-                    stat['coupes'] += len(coupes)
+                    metric[n][vtype]['total'] = places
+                    if vtype == 'l':
+                        metric[n][vtype]['uppers'] = []
+                        metric[n][vtype]['lowers'] = places
+                        metric[n][vtype]['pairs'] = []
+                        metric[n][vtype]['coupes'] = [
+                            (p, p + 1) for p in places
+                            if p % 2 == 1 and p + 1 in places]
+                    else:
+                        metric[n][vtype]['uppers'] = [p for p in places
+                                                      if p % 2 == 0]
+                        metric[n][vtype]['lowers'] = [p for p in places
+                                                      if p % 2 == 1]
+                        metric[n][vtype]['pairs'] = [
+                            (p, p + 1) for p in places
+                            if p % 2 == 1 and p + 1 in places]
+                        metric[n][vtype]['coupes'] = [
+                            (p, p + 1, p + 2, p + 3)
+                            for p in metric[vtype]['total']
+                            if p <= 33
+                            and p % 4 == 1
+                            and p + 1 in places
+                            and p + 2 in places
+                            and p + 3 in places]
+
+                    for metric_type in ('total', 'lowers', 'uppers',
+                                        'pairs', 'coupes'):
+                        stat[vtype][metric_type] += \
+                            len(metric[n][vtype][metric_type])
+
+                        metric_ = metric[n][vtype][metric_type][:]
+                        while metric_ and ((vtype, metric_type) in queries):
+                            result.append(((vtype, metric_type),
+                                           n, metric_.pop(0)))
+                            queries.remove((vtype, metric_type))
+
                     if args.verbose >= 4:
-                        print 'ВАГОН: ', vagon['number']
-                        if uppers:
-                            print 'ВЕРХНИЕ: %s' % uppers
-                        if lowers:
-                            print 'НИЖНИЕ: %s' % lowers
-                        if pairs:
-                            print 'ВЕРХ+НИЗ: %s' % pairs
-                        if coupes:
-                            print 'КУПЕ: %s' % coupes
+                        print 'ВАГОН: ', n
+                        if metric[n][vtype]['uppers']:
+                            print 'ВЕРХНИЕ: %s' % metric[n][vtype]['uppers']
+                        if metric[n][vtype]['lowers']:
+                            print 'НИЖНИЕ: %s' % metric[n][vtype]['lowers']
+                        if metric[n][vtype]['pairs']:
+                            print 'ВЕРХ+НИЗ: %s' % metric[n][vtype]['pairs']
+                        if metric[n][vtype]['coupes']:
+                            print 'КУПЕ: %s' % metric[n][vtype]['coupes']
                     elif args.verbose >= 3:
                         print 'ВАГОН: ', vagon['number']
-                        print 'МЕСТА: %s' % places
+                        print 'МЕСТА: %s' % metric[n][vtype]['total']
 
-                print ('ВСЕГО: %s НИЖНИЕ: %s ВЕРХ+НИЗ: %s КУПЕ: %s'
-                       '' % (stat['total'], stat['lowers'],
-                             stat['pairs'], stat['coupes']))
+                print ('ВСЕГО: %s НИЖНИЕ: %s ВЕРХНИЕ: %s ВЕРХ+НИЗ: %s КУПЕ: %s'
+                       '' % (stat[vtype]['total'],
+                             stat[vtype]['lowers'],
+                             stat[vtype]['uppers'],
+                             stat[vtype]['pairs'],
+                             stat[vtype]['coupes']))
+            for key in stat[vtype]:
+                stat[vtype][key] += stat[vtype][key]
+
+    if result:
+        print 'НАЙДЕНО:'
+        for r in result:
+            q, vagon_number, places = r
+            print '{}: ВАГОН: {}  МЕСТА: {}' \
+                  ''.format('.'.join(q), vagon_number, str(places))
+    if queries:
+        print 'НЕ НАЙДЕНО:'
+        for q in queries:
+            print '.'.join(q)
+        exit(1)
+
 
 def _rezolve_code(query):
     url = 'http://www.pz.gov.ua/rezervGR/aj_stations.php'
@@ -215,7 +272,7 @@ def _rezolve_code(query):
     return json.loads(resp.text.split('\n')[-1])
 
 
-def stations(args):
+def guess_station_codes(args):
     for q in args.query:
         for item in _rezolve_code(q):
             print '%s : %s' % (item['f_name'], item['nom'])
